@@ -52,6 +52,8 @@ static void ShowFindDialog(HWND hwnd);
 static void ShowReplaceDialog(HWND hwnd);
 static BOOL DoFindNext(BOOL reverse);
 static void DoSelectFont(HWND hwnd);
+static BOOL LoadFontFromIni(void);
+static void SaveFontToIni(const LOGFONTW *lf);
 static void InsertTimeDate(HWND hwnd);
 static void HandleFindReplace(LPFINDREPLACE lpfr);
 static BOOL LoadDocumentFromPath(HWND hwnd, LPCWSTR path);
@@ -518,9 +520,117 @@ static void DoSelectFont(HWND hwnd) {
             if (g_app.hFont) DeleteObject(g_app.hFont);
             g_app.hFont = newFont;
             ApplyFontToEdit(g_app.hwndEdit, g_app.hFont);
+            LOGFONTW lfcurrent = {0}; // Save current font
+            if (g_app.hFont) {
+                GetObjectW(g_app.hFont, sizeof(LOGFONTW), &lfcurrent);
+                SaveFontToIni(&lfcurrent);
+            }
             UpdateLayout(hwnd);
         }
     }
+}
+static BOOL LoadFontFromIni(void) {
+    WCHAR exePath[MAX_PATH_BUFFER];
+    if (GetModuleFileNameW(NULL, exePath, ARRAYSIZE(exePath)) == 0) return FALSE;
+
+    WCHAR *dot = wcsrchr(exePath, L'.');
+    WCHAR *slash = wcsrchr(exePath, L'\\');
+    if (dot && (!slash || dot > slash)) *dot = L'\0';
+    StringCchCatW(exePath, ARRAYSIZE(exePath), L".ini");
+
+    WCHAR buf[256];
+    LOGFONTW lf = {0};
+
+    if (!GetPrivateProfileStringW(L"Font", L"FaceName", L"", lf.lfFaceName, ARRAYSIZE(lf.lfFaceName), exePath)) {
+        return FALSE;
+    }
+
+    if (GetPrivateProfileStringW(L"Font", L"Height", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfHeight = (LONG)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"Width", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfWidth = (LONG)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"Escapement", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfEscapement = (LONG)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"Orientation", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfOrientation = (LONG)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"Weight", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfWeight = (LONG)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"Italic", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfItalic = (BYTE)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"Underline", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfUnderline = (BYTE)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"StrikeOut", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfStrikeOut = (BYTE)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"CharSet", L"1", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfCharSet = (BYTE)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"OutPrecision", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfOutPrecision = (BYTE)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"ClipPrecision", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfClipPrecision = (BYTE)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"Quality", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfQuality = (BYTE)wcstol(buf, NULL, 10);
+    }
+    if (GetPrivateProfileStringW(L"Font", L"PitchAndFamily", L"0", buf, ARRAYSIZE(buf), exePath)) {
+        lf.lfPitchAndFamily = (BYTE)wcstol(buf, NULL, 10);
+    }
+
+    HFONT hNewFont = CreateFontIndirectW(&lf);
+    if (!hNewFont) return FALSE;
+    if (g_app.hFont) DeleteObject(g_app.hFont);
+    g_app.hFont = hNewFont;
+    ApplyFontToEdit(g_app.hwndEdit, g_app.hFont);
+    return TRUE;
+}
+
+static void SaveFontToIni(const LOGFONTW *lf) {
+    if (!lf) return;
+    WCHAR exePath[MAX_PATH_BUFFER];
+    if (GetModuleFileNameW(NULL, exePath, ARRAYSIZE(exePath)) == 0) return;
+
+    WCHAR *dot = wcsrchr(exePath, L'.');
+    WCHAR *slash = wcsrchr(exePath, L'\\');
+    if (dot && (!slash || dot > slash)) *dot = L'\0';
+    StringCchCatW(exePath, ARRAYSIZE(exePath), L".ini");
+
+    WCHAR buf[64];
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfHeight);
+    WritePrivateProfileStringW(L"Font", L"Height", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfWidth);
+    WritePrivateProfileStringW(L"Font", L"Width", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfEscapement);
+    WritePrivateProfileStringW(L"Font", L"Escapement", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfOrientation);
+    WritePrivateProfileStringW(L"Font", L"Orientation", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfWeight);
+    WritePrivateProfileStringW(L"Font", L"Weight", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfItalic);
+    WritePrivateProfileStringW(L"Font", L"Italic", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfUnderline);
+    WritePrivateProfileStringW(L"Font", L"Underline", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfStrikeOut);
+    WritePrivateProfileStringW(L"Font", L"StrikeOut", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfCharSet);
+    WritePrivateProfileStringW(L"Font", L"CharSet", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfOutPrecision);
+    WritePrivateProfileStringW(L"Font", L"OutPrecision", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfClipPrecision);
+    WritePrivateProfileStringW(L"Font", L"ClipPrecision", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfQuality);
+    WritePrivateProfileStringW(L"Font", L"Quality", buf, exePath);
+    StringCchPrintfW(buf, ARRAYSIZE(buf), L"%d", lf->lfPitchAndFamily);
+    WritePrivateProfileStringW(L"Font", L"PitchAndFamily", buf, exePath);
+    WritePrivateProfileStringW(L"Font", L"FaceName", lf->lfFaceName, exePath);
 }
 
 static void InsertTimeDate(HWND hwnd) {
@@ -772,6 +882,7 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
     g_app.encoding = ENC_UTF8;
     g_app.findFlags = FR_DOWN;
 
+
     WNDCLASSEXW wc = {0};
     wc.cbSize = sizeof(wc);
     wc.style = CS_HREDRAW | CS_VREDRAW;
@@ -799,6 +910,8 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
 
     g_app.hwndMain = hwnd;
     ShowWindow(hwnd, nCmdShow);
+
+    LoadFontFromIni(); // Try loading persisted font 
     UpdateWindow(hwnd);
 
     HACCEL accel = LoadAcceleratorsW(hInstance, MAKEINTRESOURCE(IDC_RETROPAD));
