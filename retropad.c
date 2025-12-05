@@ -232,6 +232,64 @@ static void ApplyFontToEdit(HWND hwndEdit, HFONT font) {
     SendMessageW(hwndEdit, WM_SETFONT, (WPARAM)font, TRUE);
 }
 
+// Handle DEL key to delete character to the right of cursor
+static void HandleDeleteKey(HWND hwndEdit) {
+    // Get current cursor position
+    DWORD selStart = 0, selEnd = 0;
+    SendMessageW(hwndEdit, EM_GETSEL, (WPARAM)&selStart, (LPARAM)&selEnd);
+
+    // If there's a selection, delete it by simulating standard behavior
+    if (selStart != selEnd) {
+        SendMessageW(hwndEdit, WM_CLEAR, 0, 0);
+        return;
+    }
+
+    // Get the text
+    WCHAR *text = NULL;
+    int len = 0;
+    if (!GetEditText(hwndEdit, &text, &len)) {
+        return;
+    }
+
+    // If cursor is at the end of text, nothing to delete
+    if (selStart >= (DWORD)len) {
+        HeapFree(GetProcessHeap(), 0, text);
+        return;
+    }
+
+    // Delete the character at the cursor position
+    WCHAR *newText = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, (len) * sizeof(WCHAR));
+    if (!newText) {
+        HeapFree(GetProcessHeap(), 0, text);
+        return;
+    }
+
+    // Copy everything before cursor
+    if (selStart > 0) {
+        CopyMemory(newText, text, selStart * sizeof(WCHAR));
+    }
+
+    // Copy everything after the character to delete (skip one character)
+    if (selStart < (DWORD)len) {
+        CopyMemory(newText + selStart, text + selStart + 1, (len - selStart - 1) * sizeof(WCHAR));
+    }
+
+    newText[len - 1] = L'\0';
+
+    // Set the new text and restore cursor position
+    SetWindowTextW(hwndEdit, newText);
+    SendMessageW(hwndEdit, EM_SETSEL, selStart, selStart);
+    SendMessageW(hwndEdit, EM_SETMODIFY, TRUE, 0);
+
+    // Update the main window state
+    g_app.modified = TRUE;
+    UpdateTitle(g_app.hwndMain);
+    UpdateStatusBar(g_app.hwndMain);
+
+    HeapFree(GetProcessHeap(), 0, text);
+    HeapFree(GetProcessHeap(), 0, newText);
+}
+
 static void CreateEditControl(HWND hwnd) {
     if (g_app.hwndEdit) {
         DestroyWindow(g_app.hwndEdit);
@@ -918,6 +976,12 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
 
     MSG msg;
     while (GetMessageW(&msg, NULL, 0, 0)) {
+        // Handle DEL key specially when the edit control has focus
+        if (msg.message == WM_KEYDOWN && msg.wParam == VK_DELETE && msg.hwnd == g_app.hwndEdit) {
+            HandleDeleteKey(g_app.hwndEdit);
+            continue;
+        }
+
         if (!accel || !TranslateAcceleratorW(hwnd, accel, &msg)) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
