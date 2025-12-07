@@ -982,6 +982,12 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
             continue;
         }
 
+        // Handle Ctrl+A (Select All) when edit control has focus
+        if (msg.message == WM_KEYDOWN && (msg.wParam == 'A' || msg.wParam == 'a') && (GetKeyState(VK_CONTROL) & 0x8000) && msg.hwnd == g_app.hwndEdit) {
+            SendMessageW(g_app.hwndEdit, EM_SETSEL, 0, -1);
+            continue;
+        }
+
         if (!accel || !TranslateAcceleratorW(hwnd, accel, &msg)) {
             TranslateMessage(&msg);
             DispatchMessageW(&msg);
