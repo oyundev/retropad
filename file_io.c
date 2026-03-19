@@ -179,6 +179,76 @@ static BOOL WriteANSI(HANDLE file, const WCHAR *text, size_t length) {
     return ok;
 }
 
+// Normalize line endings to Windows style (CRLF)
+// Converts any mix of LF and CRLF to consistently use CRLF
+WCHAR* NormalizeLineEndings(const WCHAR *text, size_t *outLength) {
+    if (!text) return NULL;
+
+    size_t len = wcslen(text);
+    if (len == 0) {
+        // Return empty string
+        WCHAR *empty = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, sizeof(WCHAR));
+        if (!empty) return NULL;
+        empty[0] = L'\0';
+        if (outLength) *outLength = 0;
+        return empty;
+    }
+
+    // First pass: count how many CRLF pairs we need
+    size_t newLen = 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (text[i] == L'\r') {
+            if (i + 1 < len && text[i + 1] == L'\n') {
+                // Already CRLF, keep it
+                newLen += 2;
+                ++i;  // Skip the \n
+            } else {
+                // Just \r, convert to CRLF
+                newLen += 2;
+            }
+        } else if (text[i] == L'\n') {
+            // Standalone \n, convert to CRLF
+            newLen += 2;
+        } else {
+            // Regular character
+            ++newLen;
+        }
+    }
+
+    // Allocate new buffer
+    WCHAR *result = (WCHAR *)HeapAlloc(GetProcessHeap(), 0, (newLen + 1) * sizeof(WCHAR));
+    if (!result) return NULL;
+
+    // Second pass: build the normalized string
+    size_t dst = 0;
+    for (size_t i = 0; i < len; ++i) {
+        if (text[i] == L'\r') {
+            if (i + 1 < len && text[i + 1] == L'\n') {
+                // Already CRLF, copy as-is
+                result[dst++] = L'\r';
+                result[dst++] = L'\n';
+                ++i;  // Skip the \n
+            } else {
+                // Just \r, convert to CRLF
+                result[dst++] = L'\r';
+                result[dst++] = L'\n';
+            }
+        } else if (text[i] == L'\n') {
+            // Standalone \n, convert to CRLF
+            result[dst++] = L'\r';
+            result[dst++] = L'\n';
+        } else {
+            // Regular character
+            result[dst++] = text[i];
+        }
+    }
+    result[dst] = L'\0';
+
+    if (outLength) *outLength = dst;
+    return result;
+}
+
+
 BOOL SaveTextFile(HWND owner, LPCWSTR path, LPCWSTR text, size_t length, TextEncoding encoding) {
     HANDLE file = CreateFileW(path, GENERIC_WRITE, 0, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
     if (file == INVALID_HANDLE_VALUE) {

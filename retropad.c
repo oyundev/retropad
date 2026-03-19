@@ -59,6 +59,7 @@ static void HandleFindReplace(LPFINDREPLACE lpfr);
 static BOOL LoadDocumentFromPath(HWND hwnd, LPCWSTR path);
 static INT_PTR CALLBACK GoToDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam);
 static INT_PTR CALLBACK AboutDlgProc(HWND dlg, UINT msg, WPARAM wParam, LPARAM lParam);
+static void DoPasteWithNormalizedLineEndings(HWND hwnd);
 
 static BOOL GetEditText(HWND hwndEdit, WCHAR **bufferOut, int *lengthOut) {
     int length = GetWindowTextLengthW(hwndEdit);
@@ -290,6 +291,39 @@ static void HandleDeleteKey(HWND hwndEdit) {
     HeapFree(GetProcessHeap(), 0, newText);
 }
 
+static void DoPasteWithNormalizedLineEndings(HWND hwnd) {
+    if (!OpenClipboard(hwnd)) {
+        return;
+    }
+
+    HANDLE clipData = GetClipboardData(CF_UNICODETEXT);
+    if (!clipData) {
+        CloseClipboard();
+        return;
+    }
+
+    WCHAR *clipText = (WCHAR *)GlobalLock(clipData);
+    if (!clipText) {
+        CloseClipboard();
+        return;
+    }
+
+    // Normalize the clipboard text
+    size_t normLen = 0;
+    WCHAR *normalized = NormalizeLineEndings(clipText, &normLen);
+    GlobalUnlock(clipData);
+    CloseClipboard();
+
+    if (normalized) {
+        // Insert the normalized text at the current cursor position
+        SendMessageW(g_app.hwndEdit, EM_REPLACESEL, TRUE, (LPARAM)normalized);
+        g_app.modified = TRUE;
+        UpdateTitle(hwnd);
+        UpdateStatusBar(hwnd);
+        HeapFree(GetProcessHeap(), 0, normalized);
+    }
+}
+
 static void CreateEditControl(HWND hwnd) {
     if (g_app.hwndEdit) {
         DestroyWindow(g_app.hwndEdit);
@@ -360,8 +394,18 @@ static BOOL LoadDocumentFromPath(HWND hwnd, LPCWSTR path) {
         return FALSE;
     }
 
-    SetWindowTextW(g_app.hwndEdit, text);
+    // Normalize line endings to Windows style
+    size_t normLen = 0;
+    WCHAR *normalized = NormalizeLineEndings(text, &normLen);
     HeapFree(GetProcessHeap(), 0, text);
+    
+    if (!normalized) {
+        MessageBoxW(hwnd, L"Failed to normalize line endings.", L"retropad", MB_ICONERROR);
+        return FALSE;
+    }
+
+    SetWindowTextW(g_app.hwndEdit, normalized);
+    HeapFree(GetProcessHeap(), 0, normalized);
     StringCchCopyW(g_app.currentPath, ARRAYSIZE(g_app.currentPath), path);
     g_app.encoding = enc;
     SendMessageW(g_app.hwndEdit, EM_SETMODIFY, FALSE, 0);
@@ -804,7 +848,7 @@ static void HandleCommand(HWND hwnd, WPARAM wParam, LPARAM lParam) {
         SendMessageW(g_app.hwndEdit, WM_COPY, 0, 0);
         break;
     case IDM_EDIT_PASTE:
-        SendMessageW(g_app.hwndEdit, WM_PASTE, 0, 0);
+        DoPasteWithNormalizedLineEndings(hwnd);
         break;
     case IDM_EDIT_DELETE:
         SendMessageW(g_app.hwndEdit, WM_CLEAR, 0, 0);
@@ -979,6 +1023,12 @@ int APIENTRY wWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPWSTR lpCmd
         // Handle DEL key specially when the edit control has focus
         if (msg.message == WM_KEYDOWN && msg.wParam == VK_DELETE && msg.hwnd == g_app.hwndEdit) {
             HandleDeleteKey(g_app.hwndEdit);
+            continue;
+        }
+
+        // Handle Ctrl+V (Paste) with normalized line endings
+        if (msg.message == WM_KEYDOWN && msg.wParam == 'V' && (GetKeyState(VK_CONTROL) & 0x8000) && msg.hwnd == g_app.hwndEdit) {
+            DoPasteWithNormalizedLineEndings(g_app.hwndMain);
             continue;
         }
 

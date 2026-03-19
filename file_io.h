@@ -20,3 +20,8 @@ BOOL SaveFileDialog(HWND owner, WCHAR *pathOut, DWORD pathLen);
 
 BOOL LoadTextFile(HWND owner, LPCWSTR path, WCHAR **textOut, size_t *lengthOut, TextEncoding *encodingOut);
 BOOL SaveTextFile(HWND owner, LPCWSTR path, LPCWSTR text, size_t length, TextEncoding encoding);
+
+// Normalize line endings to Windows style (CRLF)
+// Converts any mix of LF and CRLF to consistently use CRLF
+// Returns a newly allocated string; caller must free with HeapFree
+WCHAR* NormalizeLineEndings(const WCHAR *text, size_t *outLength);
