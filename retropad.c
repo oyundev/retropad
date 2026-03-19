@@ -291,6 +291,26 @@ static void HandleDeleteKey(HWND hwndEdit) {
     HeapFree(GetProcessHeap(), 0, newText);
 }
 
+// Subclass procedure for the edit control to intercept WM_PASTE
+static LRESULT CALLBACK EditControlSubclassProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam, 
+                                                 UINT_PTR uIdSubclass, DWORD_PTR dwRefData) {
+    (void)uIdSubclass;
+    (void)dwRefData;
+
+    switch (msg) {
+    case WM_PASTE:
+        // Intercept paste and use our normalization function instead
+        DoPasteWithNormalizedLineEndings(g_app.hwndMain);
+        return 0;
+    case WM_DESTROY:
+        // Clean up the subclass when edit control is destroyed
+        RemoveWindowSubclass(hwnd, EditControlSubclassProc, uIdSubclass);
+        break;
+    }
+
+    return DefSubclassProc(hwnd, msg, wParam, lParam);
+}
+
 static void DoPasteWithNormalizedLineEndings(HWND hwnd) {
     if (!OpenClipboard(hwnd)) {
         return;
@@ -335,8 +355,12 @@ static void CreateEditControl(HWND hwnd) {
     }
 
     g_app.hwndEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", NULL, style, 0, 0, 0, 0, hwnd, (HMENU)1, g_hInst, NULL);
-    if (g_app.hwndEdit && g_app.hFont) {
-        ApplyFontToEdit(g_app.hwndEdit, g_app.hFont);
+    if (g_app.hwndEdit) {
+        if (g_app.hFont) {
+            ApplyFontToEdit(g_app.hwndEdit, g_app.hFont);
+        }
+        // Set up subclass to intercept WM_PASTE from context menu
+        SetWindowSubclass(g_app.hwndEdit, EditControlSubclassProc, 0, (DWORD_PTR)NULL);
     }
     SendMessageW(g_app.hwndEdit, EM_SETLIMITTEXT, 0, 0); // allow large files
     UpdateLayout(hwnd);
